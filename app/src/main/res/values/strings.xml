@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shiro 屏蔽助手</string>
+    <string name="xposed_description">分应用按关键词屏蔽抖音、哔哩哔哩、bilibili 中的用户作品、直播推送、广告、分区和话题。</string>
+</resources>
