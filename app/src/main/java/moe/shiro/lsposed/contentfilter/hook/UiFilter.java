@@ -154,9 +154,21 @@ final class UiFilter {
     };
     private static final String[] AD_RESOURCE_SIGNATURES = {
             "ad_selector",
+            "ad_story",
+            "ad_feed_",
             "ad_generalize",
             "ad_player_recommend_goods",
             "ad_search_inline",
+            "ad_download",
+            "ad_file",
+            "ad_sound",
+            "ad_more",
+            "ad_return",
+            "adreward",
+            "ad_task",
+            "ad_coins",
+            "ad_feedback",
+            "ad_live_badge",
             "feed_ad",
             "ad_inline",
             "ad_vip",
@@ -192,9 +204,20 @@ final class UiFilter {
             "inline_live",
             "right_top_live_badge",
             "bg_live_card",
+            "story_enter_live_room",
+            "story_live",
+            "splash_story_enter_live_room",
+            "live_home_feed",
+            "live_video_feed",
+            "live_ic_live",
+            "player_live_avatar",
+            "avatar_living",
+            "living_animation",
             "live_cover",
             "live_rooms",
-            "live_player"
+            "live_player",
+            "live_state",
+            "liveanimation"
     };
     private static final String[] MODEL_LIVE_SIGNATURES = {
             "is_live",
@@ -361,6 +384,31 @@ final class UiFilter {
             return;
         }
         scheduleResourceCollapse(context, view, match, rules, packageName, processName, currentActivity, source);
+    }
+
+    static void handleViewTextSignal(
+            Context context,
+            View view,
+            CharSequence text,
+            String source,
+            String packageName,
+            String processName,
+            String currentActivity
+    ) {
+        if (view == null
+                || view instanceof EditText
+                || text == null
+                || !ActivityClassifier.isContentActivity(currentActivity)
+                || isNonFeedActivity(currentActivity)
+                || isInsideNonFeedSurface(context, view)) {
+            return;
+        }
+        RulesSnapshot rules = RulesCache.get(context);
+        Match match = matchText(rules, packageName, text);
+        if (!match.blocked) {
+            return;
+        }
+        scheduleSignalCollapse(context, view, match, rules, packageName, processName, currentActivity, source, text);
     }
 
     static void handleBoundItem(
@@ -1094,6 +1142,78 @@ final class UiFilter {
                         + " source=" + source
                         + " container=" + target.getClass().getName()
                         + " view=" + leaf.getClass().getName());
+            }
+        });
+    }
+
+    private static void scheduleSignalCollapse(
+            Context context,
+            View leaf,
+            Match match,
+            RulesSnapshot rules,
+            String packageName,
+            String processName,
+            String currentActivity,
+            String source,
+            CharSequence rawValue
+    ) {
+        if (leaf.getTag(TAG_COLLAPSED_REASON) instanceof String || leaf.getTag(TAG_PENDING_CHECK) != null) {
+            return;
+        }
+        leaf.setTag(TAG_PENDING_CHECK, Boolean.TRUE);
+        leaf.post(() -> {
+            leaf.setTag(TAG_PENDING_CHECK, null);
+            View target = findCollapsibleContainer(leaf);
+            if (target == null) {
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] signal matched but no feed container: " + match
+                            + " source=" + source
+                            + " value=" + sanitize(rawValue));
+                }
+                return;
+            }
+            Object adapter = adapterFromNearestRecyclerView(leaf);
+            if (isNonFeedBinding(context, target, adapter, null, packageName, currentActivity)) {
+                restoreView(target);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip non-feed signal target: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName()
+                            + " value=" + sanitize(rawValue));
+                }
+                return;
+            }
+            if (isPagerPageItem(target, adapter, null)) {
+                concealPagerPage(target, match);
+                leaf.setTag(TAG_COLLAPSED_REASON, match.toString());
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] pager signal target concealed: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName()
+                            + " value=" + sanitize(rawValue));
+                }
+                return;
+            }
+            if (looksLikeWholeScreen(target)) {
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip oversized signal target: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName()
+                            + " value=" + sanitize(rawValue));
+                }
+                return;
+            }
+            collapseView(target, match);
+            leaf.setTag(TAG_COLLAPSED_REASON, match.toString());
+            if (rules.debugLog) {
+                XposedBridge.log("[LCF] signal collapsed package=" + packageName
+                        + " process=" + processName
+                        + " activity=" + currentActivity
+                        + " reason=" + match
+                        + " source=" + source
+                        + " container=" + target.getClass().getName()
+                        + " view=" + leaf.getClass().getName()
+                        + " value=" + sanitize(rawValue));
             }
         });
     }

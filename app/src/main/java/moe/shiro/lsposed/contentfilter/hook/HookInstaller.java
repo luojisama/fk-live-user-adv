@@ -33,7 +33,9 @@ final class HookInstaller {
         RulesCache.warmUp(appContext);
         hookActivityResume();
         hookTextUpdates(appContext);
+        hookContentDescriptions(appContext);
         hookResourceBadges(appContext);
+        hookTextCompoundResources(appContext);
         RecyclerBindHook.install(classLoader, appContext, CURRENT);
         SettingsEntryInjector.install(classLoader, appContext, CURRENT);
         XposedBridge.log("[LCF] hooks installed for " + CURRENT.packageName + " process=" + CURRENT.processName);
@@ -72,6 +74,34 @@ final class HookInstaller {
                                 appContext,
                                 textView,
                                 textView.getText(),
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+    }
+
+    private static void hookContentDescriptions(Context appContext) {
+        XposedHelpers.findAndHookMethod(
+                View.class,
+                "setContentDescription",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof View)
+                                || param.args == null
+                                || param.args.length == 0
+                                || !(param.args[0] instanceof CharSequence)) {
+                            return;
+                        }
+                        UiFilter.handleViewTextSignal(
+                                appContext,
+                                (View) param.thisObject,
+                                (CharSequence) param.args[0],
+                                "content_description",
                                 CURRENT.packageName,
                                 CURRENT.processName,
                                 CURRENT.currentActivity
@@ -133,5 +163,43 @@ final class HookInstaller {
                 }
         );
     }
-}
 
+    private static void hookTextCompoundResources(Context appContext) {
+        hookTextCompoundResourceMethod(appContext, "setCompoundDrawablesWithIntrinsicBounds");
+        hookTextCompoundResourceMethod(appContext, "setCompoundDrawablesRelativeWithIntrinsicBounds");
+    }
+
+    private static void hookTextCompoundResourceMethod(Context appContext, String methodName) {
+        XposedHelpers.findAndHookMethod(
+                TextView.class,
+                methodName,
+                int.class,
+                int.class,
+                int.class,
+                int.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof TextView) || param.args == null) {
+                            return;
+                        }
+                        TextView textView = (TextView) param.thisObject;
+                        for (Object arg : param.args) {
+                            if (!(arg instanceof Integer) || (Integer) arg == 0) {
+                                continue;
+                            }
+                            UiFilter.handleResourceBadgeSet(
+                                    appContext,
+                                    textView,
+                                    (Integer) arg,
+                                    methodName,
+                                    CURRENT.packageName,
+                                    CURRENT.processName,
+                                    CURRENT.currentActivity
+                            );
+                        }
+                    }
+                }
+        );
+    }
+}
