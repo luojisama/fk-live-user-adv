@@ -313,6 +313,9 @@ final class UiFilter {
         if (depth > MAX_PARENT_DEPTH || textViews[0] > MAX_SCAN_TEXT_VIEWS) {
             return Match.none();
         }
+        if (isNonFeedSurfaceView(context, view)) {
+            return Match.none();
+        }
         if (view instanceof TextView && !(view instanceof EditText)) {
             textViews[0]++;
             Match match = matchText(rules, packageName, ((TextView) view).getText());
@@ -938,14 +941,18 @@ final class UiFilter {
     private static boolean isInsideNonFeedSurface(Context context, View view) {
         View current = view;
         for (int depth = 0; depth < MAX_PARENT_DEPTH && current != null; depth++) {
-            String identity = nonFeedIdentity(context, current);
-            if (containsAny(identity, NON_FEED_SURFACE_SIGNATURES) != null) {
+            if (isNonFeedSurfaceView(context, current)) {
                 return true;
             }
             ViewParent parent = current.getParent();
             current = parent instanceof View ? (View) parent : null;
         }
         return false;
+    }
+
+    private static boolean isNonFeedSurfaceView(Context context, View view) {
+        return view != null
+                && containsAny(nonFeedIdentity(context, view), NON_FEED_SURFACE_SIGNATURES) != null;
     }
 
     private static String nonFeedIdentity(Context context, View view) {
