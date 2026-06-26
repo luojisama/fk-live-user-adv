@@ -146,8 +146,16 @@ final class UiFilter {
             "live_card",
             "liveroom",
             "live_room",
+            "liveroomid",
+            "live_room_id",
+            "liveid",
+            "live_id",
+            "roomid",
+            "room_id",
             "livestream",
             "live_stream",
+            "livepreview",
+            "live_preview",
             "inlinelive",
             "inline_live",
             "righttoplivebadge",
@@ -258,10 +266,7 @@ final class UiFilter {
             restoreView(itemView);
             return;
         }
-        if (isPagerPageItem(itemView, adapter, holder)) {
-            restoreView(itemView);
-            return;
-        }
+        boolean pagerPageItem = isPagerPageItem(itemView, adapter, holder);
         RulesSnapshot rules = RulesCache.get(context);
         if (!rules.hasActiveRules(packageName)) {
             restoreView(itemView);
@@ -272,10 +277,10 @@ final class UiFilter {
             match = scanBoundModel(rules, packageName, itemView, holder);
         }
         if (match.blocked) {
-            if (isPagerPageItem(itemView, adapter, holder)) {
-                restoreView(itemView);
+            if (pagerPageItem) {
+                concealPagerPage(itemView, match);
                 if (rules.debugLog) {
-                    XposedBridge.log("[LCF] skip pager page item package=" + packageName
+                    XposedBridge.log("[LCF] pager page concealed package=" + packageName
                             + " process=" + processName
                             + " activity=" + currentActivity
                             + " reason=" + match
@@ -765,8 +770,10 @@ final class UiFilter {
                 return;
             }
             if (isPagerPageItem(target, null, null)) {
+                concealPagerPage(target, match);
+                textView.setTag(TAG_COLLAPSED_REASON, match.toString());
                 if (rules.debugLog) {
-                    XposedBridge.log("[LCF] skip pager text target: " + match
+                    XposedBridge.log("[LCF] pager text target concealed: " + match
                             + " container=" + target.getClass().getName()
                             + " text=" + sanitize(textView.getText()));
                 }
@@ -1091,6 +1098,13 @@ final class UiFilter {
             params.height = 0;
             view.setLayoutParams(params);
         }
+        view.requestLayout();
+    }
+
+    private static void concealPagerPage(View view, Match match) {
+        view.setTag(TAG_COLLAPSED_REASON, match.toString());
+        view.setVisibility(View.INVISIBLE);
+        view.setAlpha(0f);
         view.requestLayout();
     }
 
