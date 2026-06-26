@@ -29,16 +29,14 @@ if ((Test-Path -LiteralPath $keystorePath) -and -not $Force) {
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
-$storePasswordSecure = Read-Host "Keystore password" -AsSecureString
-$keyPasswordSecure = Read-Host "Key password" -AsSecureString
-$storePassword = Convert-SecureStringToPlainText $storePasswordSecure
-$keyPassword = Convert-SecureStringToPlainText $keyPasswordSecure
+$signingPasswordSecure = Read-Host "Signing password for keystore and key" -AsSecureString
+$signingPassword = Convert-SecureStringToPlainText $signingPasswordSecure
 
 try {
     & keytool -genkeypair `
         -keystore $keystorePath `
-        -storepass $storePassword `
-        -keypass $keyPassword `
+        -storetype PKCS12 `
+        -storepass $signingPassword `
         -alias $Alias `
         -keyalg RSA `
         -keysize 4096 `
@@ -59,16 +57,13 @@ try {
     Write-Output ""
     Write-Output "Configure these GitHub Actions secrets:"
     Write-Output "  ANDROID_KEYSTORE_BASE64 = contents of $base64Path"
-    Write-Output "  ANDROID_KEYSTORE_PASSWORD = the keystore password you entered"
+    Write-Output "  ANDROID_KEYSTORE_PASSWORD = the signing password you entered"
     Write-Output "  ANDROID_KEY_ALIAS = $Alias"
-    Write-Output "  ANDROID_KEY_PASSWORD = the key password you entered"
+    Write-Output "  ANDROID_KEY_PASSWORD = the same signing password"
     Write-Output ""
     Write-Output "Do not commit files under $outputDir. They are ignored by .gitignore."
 } finally {
-    if ($storePassword) {
-        $storePassword = $null
-    }
-    if ($keyPassword) {
-        $keyPassword = $null
+    if ($signingPassword) {
+        $signingPassword = $null
     }
 }
