@@ -34,6 +34,7 @@ final class HookInstaller {
         hookActivityResume();
         hookTextUpdates(appContext);
         hookContentDescriptions(appContext);
+        hookViewTags(appContext);
         hookResourceBadges(appContext);
         hookTextCompoundResources(appContext);
         RecyclerBindHook.install(classLoader, appContext, CURRENT);
@@ -102,6 +103,61 @@ final class HookInstaller {
                                 (View) param.thisObject,
                                 (CharSequence) param.args[0],
                                 "content_description",
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+    }
+
+    private static void hookViewTags(Context appContext) {
+        XposedHelpers.findAndHookMethod(
+                View.class,
+                "setTag",
+                Object.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof View)
+                                || param.args == null
+                                || param.args.length == 0) {
+                            return;
+                        }
+                        UiFilter.handleViewTagSignal(
+                                appContext,
+                                (View) param.thisObject,
+                                0,
+                                param.args[0],
+                                "tag",
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+        XposedHelpers.findAndHookMethod(
+                View.class,
+                "setTag",
+                int.class,
+                Object.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof View)
+                                || param.args == null
+                                || param.args.length < 2
+                                || !(param.args[0] instanceof Integer)) {
+                            return;
+                        }
+                        UiFilter.handleViewTagSignal(
+                                appContext,
+                                (View) param.thisObject,
+                                (Integer) param.args[0],
+                                param.args[1],
+                                "keyed_tag",
                                 CURRENT.packageName,
                                 CURRENT.processName,
                                 CURRENT.currentActivity

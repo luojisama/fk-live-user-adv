@@ -411,6 +411,57 @@ final class UiFilter {
         scheduleSignalCollapse(context, view, match, rules, packageName, processName, currentActivity, source, text);
     }
 
+    static void handleViewTagSignal(
+            Context context,
+            View view,
+            int key,
+            Object value,
+            String source,
+            String packageName,
+            String processName,
+            String currentActivity
+    ) {
+        if (view == null
+                || value == null
+                || isInternalTagKey(key)
+                || !ActivityClassifier.isContentActivity(currentActivity)
+                || isNonFeedActivity(currentActivity)
+                || isInsideNonFeedSurface(context, view)
+                || containsNonFeedIdentity(value)) {
+            return;
+        }
+        RulesSnapshot rules = RulesCache.get(context);
+        if (!rules.hasActiveRules(packageName)) {
+            return;
+        }
+        Match match;
+        if (value instanceof CharSequence) {
+            match = matchText(rules, packageName, (CharSequence) value);
+        } else {
+            IdentityHashMap<Object, Boolean> nonFeedVisited = new IdentityHashMap<>();
+            if (containsNonFeedModelIdentity(value, 0, nonFeedVisited, new int[]{0})) {
+                return;
+            }
+            IdentityHashMap<Object, Boolean> visited = new IdentityHashMap<>();
+            String keyName = key == 0 ? "" : normalizeIdentityToken(resourceName(context, key));
+            match = scanModelObject(rules, packageName, value, 0, visited, new int[]{0}, keyName);
+        }
+        if (!match.blocked) {
+            return;
+        }
+        scheduleSignalCollapse(
+                context,
+                view,
+                match,
+                rules,
+                packageName,
+                processName,
+                currentActivity,
+                tagSource(context, source, key),
+                describeTagValue(value)
+        );
+    }
+
     static void handleBoundItem(
             Context context,
             View itemView,
@@ -1555,6 +1606,28 @@ final class UiFilter {
             return text.substring(0, 120) + "...";
         }
         return text;
+    }
+
+    private static boolean isInternalTagKey(int key) {
+        return key == TAG_COLLAPSED_REASON || key == TAG_PENDING_CHECK || key == TAG_ORIGINAL_HEIGHT;
+    }
+
+    private static String tagSource(Context context, String source, int key) {
+        if (key == 0) {
+            return source;
+        }
+        String resource = resourceName(context, key);
+        return resource.isEmpty() ? source + ":" + key : source + ":" + resource;
+    }
+
+    private static CharSequence describeTagValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof CharSequence) {
+            return (CharSequence) value;
+        }
+        return value.getClass().getName();
     }
 
     private static final class Match {
