@@ -336,6 +336,94 @@ final class UiFilter {
             "sponsor",
             "downloadcompliance"
     };
+    private static final String[] MODEL_USER_TEXT_SIGNATURES = {
+            "authorname",
+            "authornickname",
+            "authornick",
+            "authorusername",
+            "authoruname",
+            "ownername",
+            "ownernickname",
+            "ownerusername",
+            "uploadername",
+            "uploadernickname",
+            "uploaderusername",
+            "creatorname",
+            "creatornickname",
+            "publishername",
+            "publishernickname",
+            "accountname",
+            "accountnickname",
+            "profilename",
+            "profilenickname",
+            "membername",
+            "membernickname",
+            "username",
+            "usernickname",
+            "usernick",
+            "displayname",
+            "screenname",
+            "upname",
+            "upnickname",
+            "uppername",
+            "uppernickname",
+            "anchorname",
+            "anchornickname",
+            "nickname"
+    };
+    private static final String[] MODEL_USER_TEXT_EXACT_NAMES = {
+            "author",
+            "getauthor",
+            "owner",
+            "getowner",
+            "uploader",
+            "getuploader",
+            "creator",
+            "getcreator",
+            "publisher",
+            "getpublisher",
+            "account",
+            "getaccount",
+            "profile",
+            "getprofile",
+            "member",
+            "getmember",
+            "user",
+            "getuser",
+            "up",
+            "getup",
+            "upper",
+            "getupper",
+            "uname",
+            "getuname",
+            "nick",
+            "getnick",
+            "nickname",
+            "getnickname",
+            "displayname",
+            "getdisplayname",
+            "screenname",
+            "getscreenname"
+    };
+    private static final String[] MODEL_USER_CONTAINER_SIGNATURES = {
+            "author",
+            "owner",
+            "uploader",
+            "creator",
+            "publisher",
+            "account",
+            "profile",
+            "member",
+            "user",
+            "upper",
+            "anchor"
+    };
+    private static final String[] MODEL_USER_NAME_SUFFIXES = {
+            "name",
+            "nickname",
+            "nick",
+            "uname"
+    };
 
     private UiFilter() {
     }
@@ -674,21 +762,22 @@ final class UiFilter {
             return identity;
         }
         if (type.isArray()) {
-            return scanModelArray(rules, packageName, value, depth, visited, budget);
+            return scanModelArray(rules, packageName, value, depth, visited, budget, fieldName);
         }
         if (value instanceof Iterable) {
-            return scanModelIterable(rules, packageName, (Iterable<?>) value, depth, visited, budget);
+            return scanModelIterable(rules, packageName, (Iterable<?>) value, depth, visited, budget, fieldName);
         }
         if (value instanceof Map) {
-            return scanModelMap(rules, packageName, (Map<?, ?>) value, depth, visited, budget);
+            return scanModelMap(rules, packageName, (Map<?, ?>) value, depth, visited, budget, fieldName);
         }
         if (shouldSkipModelClass(type)) {
             return Match.none();
         }
-        Match accessorMatch = scanModelAccessors(rules, packageName, value, type, budget);
+        Match accessorMatch = scanModelAccessors(rules, packageName, value, type, depth, visited, budget);
         if (accessorMatch.blocked) {
             return accessorMatch;
         }
+        String childPrefix = effectiveChildFieldPrefix(fieldName, type);
         Class<?> current = type;
         while (current != null && current != Object.class && budget[0] <= MAX_MODEL_FIELDS) {
             Field[] fields;
@@ -715,7 +804,7 @@ final class UiFilter {
                         depth + 1,
                         visited,
                         budget,
-                        normalizeIdentityToken(field.getName())
+                        appendModelFieldName(childPrefix, field.getName())
                 );
                 if (childMatch.blocked) {
                     return childMatch;
@@ -731,6 +820,8 @@ final class UiFilter {
             String packageName,
             Object value,
             Class<?> type,
+            int depth,
+            IdentityHashMap<Object, Boolean> visited,
             int[] budget
     ) {
         int methodCount = 0;
@@ -759,6 +850,21 @@ final class UiFilter {
                 Match signal = matchModelSignal(rules, packageName, method.getName(), child);
                 if (signal.blocked) {
                     return signal;
+                }
+                String methodName = normalizeIdentityToken(method.getName());
+                if (hasUserModelSignalName(rules, packageName, methodName)) {
+                    Match childMatch = scanModelObject(
+                            rules,
+                            packageName,
+                            child,
+                            depth + 1,
+                            visited,
+                            budget,
+                            methodName
+                    );
+                    if (childMatch.blocked) {
+                        return childMatch;
+                    }
                 }
             }
             current = current.getSuperclass();
@@ -800,7 +906,8 @@ final class UiFilter {
             return false;
         }
         return (appRules.blockAds && containsAny(normalizedName, MODEL_AD_SIGNATURES) != null)
-                || (appRules.blockLive && containsAny(normalizedName, MODEL_LIVE_SIGNATURES) != null);
+                || (appRules.blockLive && containsAny(normalizedName, MODEL_LIVE_SIGNATURES) != null)
+                || hasUserModelSignalName(appRules, normalizedName);
     }
 
     private static Match scanModelArray(
@@ -809,11 +916,12 @@ final class UiFilter {
             Object value,
             int depth,
             IdentityHashMap<Object, Boolean> visited,
-            int[] budget
+            int[] budget,
+            String fieldName
     ) {
         int length = Math.min(Array.getLength(value), MAX_MODEL_COLLECTION_ITEMS);
         for (int i = 0; i < length; i++) {
-            Match match = scanModelObject(rules, packageName, Array.get(value, i), depth + 1, visited, budget, "");
+            Match match = scanModelObject(rules, packageName, Array.get(value, i), depth + 1, visited, budget, fieldName);
             if (match.blocked) {
                 return match;
             }
@@ -827,14 +935,15 @@ final class UiFilter {
             Iterable<?> values,
             int depth,
             IdentityHashMap<Object, Boolean> visited,
-            int[] budget
+            int[] budget,
+            String fieldName
     ) {
         int count = 0;
         for (Object child : values) {
             if (count++ >= MAX_MODEL_COLLECTION_ITEMS) {
                 break;
             }
-            Match match = scanModelObject(rules, packageName, child, depth + 1, visited, budget, "");
+            Match match = scanModelObject(rules, packageName, child, depth + 1, visited, budget, fieldName);
             if (match.blocked) {
                 return match;
             }
@@ -848,7 +957,8 @@ final class UiFilter {
             Map<?, ?> values,
             int depth,
             IdentityHashMap<Object, Boolean> visited,
-            int[] budget
+            int[] budget,
+            String fieldName
     ) {
         int count = 0;
         for (Map.Entry<?, ?> entry : values.entrySet()) {
@@ -858,7 +968,15 @@ final class UiFilter {
             String key = entry.getKey() instanceof CharSequence
                     ? normalizeIdentityToken(entry.getKey().toString())
                     : "";
-            Match match = scanModelObject(rules, packageName, entry.getValue(), depth + 1, visited, budget, key);
+            Match match = scanModelObject(
+                    rules,
+                    packageName,
+                    entry.getValue(),
+                    depth + 1,
+                    visited,
+                    budget,
+                    appendModelFieldName(fieldName, key)
+            );
             if (match.blocked) {
                 return match;
             }
@@ -880,6 +998,15 @@ final class UiFilter {
             return Match.none();
         }
         String name = normalizeIdentityToken(rawName);
+        if (appRules.blockUsers && isUserModelTextName(name) && value instanceof CharSequence) {
+            String text = RulesSnapshot.normalize((CharSequence) value);
+            if (!text.isEmpty() && text.length() <= MAX_USER_TEXT_LENGTH) {
+                String keyword = containsAny(text, appRules.userKeywords);
+                if (keyword != null) {
+                    return Match.blocked("user_model", keyword);
+                }
+            }
+        }
         if (appRules.blockAds) {
             String signal = containsAny(name, MODEL_AD_SIGNATURES);
             if (signal != null && hasPresentSignalValue(value)) {
@@ -893,6 +1020,64 @@ final class UiFilter {
             }
         }
         return Match.none();
+    }
+
+    private static boolean hasUserModelSignalName(RulesSnapshot rules, String packageName, String normalizedName) {
+        if (normalizedName == null || normalizedName.isEmpty() || !rules.hasActiveRules(packageName)) {
+            return false;
+        }
+        RulesSnapshot.AppRules appRules = rules.forPackage(packageName);
+        return hasUserModelSignalName(appRules, normalizedName);
+    }
+
+    private static boolean hasUserModelSignalName(RulesSnapshot.AppRules appRules, String normalizedName) {
+        return appRules.enabled
+                && appRules.blockUsers
+                && !appRules.userKeywords.isEmpty()
+                && isUserModelTextName(normalizedName);
+    }
+
+    private static boolean isUserModelTextName(String normalizedName) {
+        if (normalizedName == null || normalizedName.isEmpty()) {
+            return false;
+        }
+        if (containsAny(normalizedName, MODEL_USER_TEXT_SIGNATURES) != null) {
+            return true;
+        }
+        if (containsAny(normalizedName, MODEL_USER_CONTAINER_SIGNATURES) != null) {
+            for (String suffix : MODEL_USER_NAME_SUFFIXES) {
+                if (normalizedName.endsWith(suffix)) {
+                    return true;
+                }
+            }
+        }
+        for (String exactName : MODEL_USER_TEXT_EXACT_NAMES) {
+            if (exactName.equals(normalizedName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String appendModelFieldName(String parent, String child) {
+        String normalizedChild = normalizeIdentityToken(child);
+        if (parent == null || parent.isEmpty()) {
+            return normalizedChild;
+        }
+        if (normalizedChild.isEmpty()) {
+            return parent;
+        }
+        return parent + normalizedChild;
+    }
+
+    private static String effectiveChildFieldPrefix(String fieldName, Class<?> type) {
+        if (fieldName != null && !fieldName.isEmpty()) {
+            return fieldName;
+        }
+        if (type != null && containsAny(normalizeIdentityToken(type.getName()), MODEL_USER_CONTAINER_SIGNATURES) != null) {
+            return "user";
+        }
+        return "";
     }
 
     private static Match matchModelIdentity(RulesSnapshot rules, String packageName, String className) {
