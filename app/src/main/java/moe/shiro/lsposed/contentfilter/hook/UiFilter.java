@@ -1,6 +1,7 @@
 package moe.shiro.lsposed.contentfilter.hook;
 
 import android.content.Context;
+import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -273,6 +274,16 @@ final class UiFilter {
             "ad_root",
             "adtitle",
             "ad_title",
+            "adbadge",
+            "ad_badge",
+            "adlabel",
+            "ad_label",
+            "adicon",
+            "ad_icon",
+            "adbanner",
+            "ad_banner",
+            "adlive",
+            "ad_live",
             "adwrapper",
             "ad_wrapper",
             "adreport",
@@ -459,6 +470,48 @@ final class UiFilter {
                 currentActivity,
                 tagSource(context, source, key),
                 describeTagValue(value)
+        );
+    }
+
+    static void handleDrawableSignal(
+            Context context,
+            View view,
+            Drawable drawable,
+            String source,
+            String packageName,
+            String processName,
+            String currentActivity
+    ) {
+        if (view == null
+                || drawable == null
+                || !ActivityClassifier.isContentActivity(currentActivity)
+                || isNonFeedActivity(currentActivity)
+                || isInsideNonFeedSurface(context, view)
+                || containsNonFeedIdentity(drawable)) {
+            return;
+        }
+        RulesSnapshot rules = RulesCache.get(context);
+        if (!rules.hasActiveRules(packageName)) {
+            return;
+        }
+        IdentityHashMap<Object, Boolean> nonFeedVisited = new IdentityHashMap<>();
+        if (containsNonFeedModelIdentity(drawable, 0, nonFeedVisited, new int[]{0})) {
+            return;
+        }
+        Match match = scanModelObject(rules, packageName, drawable, 0, new IdentityHashMap<>(), new int[]{0}, "");
+        if (!match.blocked) {
+            return;
+        }
+        scheduleSignalCollapse(
+                context,
+                view,
+                match,
+                rules,
+                packageName,
+                processName,
+                currentActivity,
+                source,
+                describeTagValue(drawable)
         );
     }
 

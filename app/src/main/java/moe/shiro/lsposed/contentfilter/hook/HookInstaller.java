@@ -2,6 +2,7 @@ package moe.shiro.lsposed.contentfilter.hook;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -36,6 +37,7 @@ final class HookInstaller {
         hookContentDescriptions(appContext);
         hookViewTags(appContext);
         hookResourceBadges(appContext);
+        hookDrawableObjects(appContext);
         hookTextCompoundResources(appContext);
         RecyclerBindHook.install(classLoader, appContext, CURRENT);
         SettingsEntryInjector.install(classLoader, appContext, CURRENT);
@@ -215,6 +217,97 @@ final class HookInstaller {
                                 CURRENT.processName,
                                 CURRENT.currentActivity
                         );
+                    }
+                }
+        );
+    }
+
+    private static void hookDrawableObjects(Context appContext) {
+        XposedHelpers.findAndHookMethod(
+                ImageView.class,
+                "setImageDrawable",
+                Drawable.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof ImageView)
+                                || param.args == null
+                                || param.args.length == 0
+                                || !(param.args[0] instanceof Drawable)) {
+                            return;
+                        }
+                        UiFilter.handleDrawableSignal(
+                                appContext,
+                                (ImageView) param.thisObject,
+                                (Drawable) param.args[0],
+                                "image_drawable",
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+        XposedHelpers.findAndHookMethod(
+                View.class,
+                "setBackground",
+                Drawable.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof View)
+                                || param.args == null
+                                || param.args.length == 0
+                                || !(param.args[0] instanceof Drawable)) {
+                            return;
+                        }
+                        UiFilter.handleDrawableSignal(
+                                appContext,
+                                (View) param.thisObject,
+                                (Drawable) param.args[0],
+                                "background_drawable",
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+        hookTextCompoundDrawableMethod(appContext, "setCompoundDrawables");
+        hookTextCompoundDrawableMethod(appContext, "setCompoundDrawablesRelative");
+        hookTextCompoundDrawableMethod(appContext, "setCompoundDrawablesWithIntrinsicBounds");
+        hookTextCompoundDrawableMethod(appContext, "setCompoundDrawablesRelativeWithIntrinsicBounds");
+    }
+
+    private static void hookTextCompoundDrawableMethod(Context appContext, String methodName) {
+        XposedHelpers.findAndHookMethod(
+                TextView.class,
+                methodName,
+                Drawable.class,
+                Drawable.class,
+                Drawable.class,
+                Drawable.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof TextView) || param.args == null) {
+                            return;
+                        }
+                        TextView textView = (TextView) param.thisObject;
+                        for (Object arg : param.args) {
+                            if (!(arg instanceof Drawable)) {
+                                continue;
+                            }
+                            UiFilter.handleDrawableSignal(
+                                    appContext,
+                                    textView,
+                                    (Drawable) arg,
+                                    methodName,
+                                    CURRENT.packageName,
+                                    CURRENT.processName,
+                                    CURRENT.currentActivity
+                            );
+                        }
                     }
                 }
         );
