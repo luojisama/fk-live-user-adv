@@ -12,6 +12,7 @@ import moe.shiro.lsposed.contentfilter.config.RulesSnapshot;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -32,6 +33,7 @@ final class UiFilter {
     private static final int MAX_MODEL_FIELDS = 96;
     private static final int MAX_MODEL_COLLECTION_ITEMS = 8;
     private static final Map<Object, Boolean> PAGER_RECYCLER_ADAPTERS = new WeakHashMap<>();
+    private static final Map<Object, Boolean> NON_FEED_RECYCLER_ADAPTERS = new WeakHashMap<>();
     private static final String[] NON_FEED_SURFACE_SIGNATURES = {
             "drawer",
             "navigationview",
@@ -49,6 +51,54 @@ final class UiFilter {
             "评论",
             "回复",
             "弹幕"
+    };
+    private static final String[] NON_FEED_BINDING_SIGNATURES = {
+            "comment2",
+            "comment3",
+            "commentv3",
+            "commentlist",
+            "commentitem",
+            "commentcard",
+            "commenttree",
+            "commentarea",
+            "commentdetail",
+            "commentfeedlist",
+            "commentfragment",
+            "commenthalfweb",
+            "commentpage",
+            "commentsearch",
+            "commentadapter",
+            "commentsview",
+            "replylist",
+            "replyitem",
+            "mainreply",
+            "subreply",
+            "replydetail",
+            "replyfragment",
+            "replypage",
+            "replyadapter",
+            "discussion",
+            "danmaku",
+            "danmu",
+            "biliresourcecomment",
+            "appcommcomment",
+            "appcomment",
+            "评论",
+            "回复",
+            "弹幕"
+    };
+    private static final String[] NON_FEED_MODEL_FIELD_SIGNATURES = {
+            "commentlist",
+            "commentitem",
+            "commentcard",
+            "commenttree",
+            "commentarea",
+            "replylist",
+            "replyitem",
+            "mainreply",
+            "subreply",
+            "danmakulist",
+            "danmulist"
     };
     private static final String[] LIVE_VIEW_SIGNATURES = {
             "live",
@@ -161,6 +211,7 @@ final class UiFilter {
         if (adapter == null || recyclerView == null) {
             return;
         }
+        markNonFeedRecyclerAdapter(adapter);
         if (!markPagerRecyclerAdapter(adapter, recyclerView)) {
             recyclerView.post(() -> markPagerRecyclerAdapter(adapter, recyclerView));
         }
@@ -177,6 +228,7 @@ final class UiFilter {
         if (textView instanceof EditText
                 || text == null
                 || !ActivityClassifier.isContentActivity(currentActivity)
+                || isNonFeedActivity(currentActivity)
                 || isInsideNonFeedSurface(context, textView)) {
             return;
         }
@@ -185,7 +237,7 @@ final class UiFilter {
         if (!match.blocked) {
             return;
         }
-        scheduleCollapse(textView, match, rules, packageName, processName, currentActivity);
+        scheduleCollapse(context, textView, match, rules, packageName, processName, currentActivity);
     }
 
     static void handleBoundItem(
@@ -197,10 +249,12 @@ final class UiFilter {
             String processName,
             String currentActivity
     ) {
-        if (itemView == null || !ActivityClassifier.isContentActivity(currentActivity)) {
+        if (itemView == null
+                || !ActivityClassifier.isContentActivity(currentActivity)
+                || isNonFeedActivity(currentActivity)) {
             return;
         }
-        if (isInsideNonFeedSurface(context, itemView)) {
+        if (isNonFeedBinding(context, itemView, adapter, holder, packageName, currentActivity)) {
             restoreView(itemView);
             return;
         }
@@ -678,6 +732,7 @@ final class UiFilter {
     }
 
     private static void scheduleCollapse(
+            Context context,
             TextView textView,
             Match match,
             RulesSnapshot rules,
@@ -695,6 +750,16 @@ final class UiFilter {
             if (target == null) {
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] matched but no feed container: " + match
+                            + " text=" + sanitize(textView.getText()));
+                }
+                return;
+            }
+            Object adapter = adapterFromNearestRecyclerView(textView);
+            if (isNonFeedBinding(context, target, adapter, null, packageName, currentActivity)) {
+                restoreView(target);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip non-feed text target: " + match
+                            + " container=" + target.getClass().getName()
                             + " text=" + sanitize(textView.getText()));
                 }
                 return;
@@ -751,6 +816,36 @@ final class UiFilter {
         return className.contains("RecyclerView");
     }
 
+    private static boolean isNonFeedBinding(
+            Context context,
+            View itemView,
+            Object adapter,
+            Object holder,
+            String packageName,
+            String currentActivity
+    ) {
+        if (itemView == null) {
+            return false;
+        }
+        if (isInsideNonFeedSurface(context, itemView)
+                || isKnownNonFeedAdapter(adapter)
+                || containsNonFeedIdentity(adapter)
+                || containsNonFeedIdentity(holder)) {
+            return true;
+        }
+        Object tag = itemView.getTag();
+        if (tag != null && !(tag instanceof CharSequence) && containsNonFeedIdentity(tag)) {
+            return true;
+        }
+        if (!isBiliPackage(packageName) || !ActivityClassifier.isContentActivity(currentActivity)) {
+            return false;
+        }
+        IdentityHashMap<Object, Boolean> visited = new IdentityHashMap<>();
+        int[] budget = new int[]{0};
+        return containsNonFeedModelIdentity(holder, 0, visited, budget)
+                || containsNonFeedModelIdentity(tag, 0, visited, budget);
+    }
+
     private static boolean isInsideNonFeedSurface(Context context, View view) {
         View current = view;
         for (int depth = 0; depth < MAX_PARENT_DEPTH && current != null; depth++) {
@@ -781,6 +876,128 @@ final class UiFilter {
             identity.append(' ').append(tag.getClass().getName().toLowerCase());
         }
         return identity.toString();
+    }
+
+    private static boolean isBiliPackage(String packageName) {
+        return "tv.danmaku.bili".equals(packageName) || "com.bilibili.app.in".equals(packageName);
+    }
+
+    private static boolean isNonFeedActivity(String currentActivity) {
+        return containsAny(normalizeIdentityToken(currentActivity), NON_FEED_BINDING_SIGNATURES) != null;
+    }
+
+    private static boolean containsNonFeedIdentity(Object value) {
+        if (value == null) {
+            return false;
+        }
+        Class<?> type = value instanceof Class ? (Class<?>) value : value.getClass();
+        for (int depth = 0; depth < 5 && type != null && type != Object.class; depth++) {
+            if (containsAny(normalizeIdentityToken(type.getName()), NON_FEED_BINDING_SIGNATURES) != null) {
+                return true;
+            }
+            type = type.getSuperclass();
+        }
+        return false;
+    }
+
+    private static boolean containsNonFeedModelIdentity(
+            Object value,
+            int depth,
+            IdentityHashMap<Object, Boolean> visited,
+            int[] budget
+    ) {
+        if (value == null || depth > 2 || budget[0] > 48) {
+            return false;
+        }
+        Class<?> type = value.getClass();
+        if (isTerminalModelValue(type) || View.class.isAssignableFrom(type) || Context.class.isAssignableFrom(type)) {
+            return false;
+        }
+        if (visited.containsKey(value)) {
+            return false;
+        }
+        visited.put(value, Boolean.TRUE);
+        if (containsNonFeedIdentity(value)) {
+            return true;
+        }
+        if (shouldSkipModelClass(type)) {
+            return false;
+        }
+        Class<?> current = type;
+        while (current != null && current != Object.class && budget[0] <= 48) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                break;
+            }
+            for (Field field : fields) {
+                if (budget[0]++ > 48 || Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                String fieldIdentity = normalizeIdentityToken(field.getName());
+                if (containsAny(fieldIdentity, NON_FEED_MODEL_FIELD_SIGNATURES) != null) {
+                    return true;
+                }
+                Object child;
+                try {
+                    field.setAccessible(true);
+                    child = field.get(value);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (containsNonFeedModelIdentity(child, depth + 1, visited, budget)) {
+                    return true;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return false;
+    }
+
+    private static void markNonFeedRecyclerAdapter(Object adapter) {
+        if (adapter == null || !containsNonFeedIdentity(adapter)) {
+            return;
+        }
+        synchronized (NON_FEED_RECYCLER_ADAPTERS) {
+            NON_FEED_RECYCLER_ADAPTERS.put(adapter, Boolean.TRUE);
+        }
+    }
+
+    private static boolean isKnownNonFeedAdapter(Object adapter) {
+        if (adapter == null) {
+            return false;
+        }
+        synchronized (NON_FEED_RECYCLER_ADAPTERS) {
+            return NON_FEED_RECYCLER_ADAPTERS.containsKey(adapter);
+        }
+    }
+
+    private static Object adapterFromNearestRecyclerView(View leaf) {
+        View current = leaf;
+        for (int depth = 0; depth < MAX_PARENT_DEPTH && current != null; depth++) {
+            ViewParent parent = current.getParent();
+            if (parent == null) {
+                return null;
+            }
+            if (parent instanceof View && isRecyclerContainerClass(parent.getClass().getName())) {
+                return adapterFromRecyclerView((View) parent);
+            }
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return null;
+    }
+
+    private static Object adapterFromRecyclerView(View recyclerView) {
+        if (recyclerView == null) {
+            return null;
+        }
+        try {
+            Method method = recyclerView.getClass().getMethod("getAdapter");
+            return method.invoke(recyclerView);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static boolean isPagerPageItem(View itemView, Object adapter, Object holder) {
