@@ -49,6 +49,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Validate release signing secrets
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${ANDROID_KEYSTORE_BASE64}" || -z "${ANDROID_KEYSTORE_PASSWORD}" || -z "${ANDROID_KEY_ALIAS}" || -z "${ANDROID_KEY_PASSWORD}" ]]; then
+            echo "::error::Publishing a Release requires stable signing secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD."
+            echo "::error::Branch and PR builds may use debug signing, but Release APKs must be signed with the same keystore so users can install updates over older versions."
+            exit 1
+          fi
+
       - name: Decode release keystore
         shell: bash
         run: |
@@ -57,7 +68,7 @@ jobs:
             echo "ANDROID_KEYSTORE_FILE=${RUNNER_TEMP}/release.keystore" >> "${GITHUB_ENV}"
             echo "Using release signing key from GitHub Secrets."
           else
-            echo "Release signing secrets are incomplete; falling back to debug signing."
+            echo "Release signing secrets are incomplete; branch/PR build will fall back to debug signing."
           fi
 
       - name: Build release APK

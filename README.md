@@ -78,7 +78,7 @@ GitHub Actions 配置在 `.github/workflows/build-release.yml`：
 - 推送 `v*` tag 时自动构建并创建/更新同名 GitHub Release。
 - 也可以在 Actions 页面手动运行 workflow，并勾选 `publish_release`，此时会使用 `gradle.properties` 里的 `appVersionName` 生成 `v<versionName>` release tag。
 
-推荐为仓库配置稳定 release 签名，否则不同构建机生成的 debug 签名可能导致用户无法直接覆盖安装更新。需要的 GitHub Secrets：
+Release APK 必须使用稳定签名，否则用户从旧版本更新到新版本时可能因为签名不同而无法覆盖安装。当前 workflow 允许分支 / PR 构建 fallback 到 debug 签名，但发布 Release（推送 `v*` tag 或手动勾选 `publish_release`）时会强制要求以下 GitHub Secrets：
 
 | Secret | 说明 |
 | --- | --- |
@@ -87,7 +87,13 @@ GitHub Actions 配置在 `.github/workflows/build-release.yml`：
 | `ANDROID_KEY_ALIAS` | key alias |
 | `ANDROID_KEY_PASSWORD` | key 密码 |
 
-未配置这些 secrets 时，workflow 会 fallback 到 debug 签名，仍可构建和发布 APK，但不保证跨版本覆盖安装。
+本地可用脚本生成 keystore 和 base64 secret 内容：
+
+```powershell
+.\scripts\create-release-keystore.ps1
+```
+
+脚本会在 `signing\` 下生成 keystore 和 `.base64.txt`。这些文件已被 `.gitignore` 排除，不要提交到仓库。把 `.base64.txt` 的内容配置到 `ANDROID_KEYSTORE_BASE64`，并把脚本中输入的密码和 alias 配置到对应 secrets。
 
 ## 安装与启用
 

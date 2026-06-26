@@ -3,4 +3,9 @@
 /**/build/
 /local.properties
 /reverse/
+/signing/
+*.keystore
+*.jks
+*.p12
+*.base64.txt
 *.iml
