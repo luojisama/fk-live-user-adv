@@ -2,6 +2,8 @@ package moe.shiro.lsposed.contentfilter.hook;
 
 import android.app.Activity;
 import android.content.Context;
+import android.view.View;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,6 +33,7 @@ final class HookInstaller {
         RulesCache.warmUp(appContext);
         hookActivityResume();
         hookTextUpdates(appContext);
+        hookResourceBadges(appContext);
         RecyclerBindHook.install(classLoader, appContext, CURRENT);
         SettingsEntryInjector.install(classLoader, appContext, CURRENT);
         XposedBridge.log("[LCF] hooks installed for " + CURRENT.packageName + " process=" + CURRENT.processName);
@@ -69,6 +72,59 @@ final class HookInstaller {
                                 appContext,
                                 textView,
                                 textView.getText(),
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+    }
+
+    private static void hookResourceBadges(Context appContext) {
+        XposedHelpers.findAndHookMethod(
+                ImageView.class,
+                "setImageResource",
+                int.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof ImageView)
+                                || param.args == null
+                                || param.args.length == 0
+                                || !(param.args[0] instanceof Integer)) {
+                            return;
+                        }
+                        UiFilter.handleResourceBadgeSet(
+                                appContext,
+                                (ImageView) param.thisObject,
+                                (Integer) param.args[0],
+                                "image",
+                                CURRENT.packageName,
+                                CURRENT.processName,
+                                CURRENT.currentActivity
+                        );
+                    }
+                }
+        );
+        XposedHelpers.findAndHookMethod(
+                View.class,
+                "setBackgroundResource",
+                int.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (!(param.thisObject instanceof View)
+                                || param.args == null
+                                || param.args.length == 0
+                                || !(param.args[0] instanceof Integer)) {
+                            return;
+                        }
+                        UiFilter.handleResourceBadgeSet(
+                                appContext,
+                                (View) param.thisObject,
+                                (Integer) param.args[0],
+                                "background",
                                 CURRENT.packageName,
                                 CURRENT.processName,
                                 CURRENT.currentActivity

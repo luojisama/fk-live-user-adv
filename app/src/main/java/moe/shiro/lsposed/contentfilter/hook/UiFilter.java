@@ -109,7 +109,15 @@ final class UiFilter {
             "livestream",
             "live_stream",
             "broadcast",
-            "anchor"
+            "anchor",
+            "liveicon",
+            "live_icon",
+            "livecover",
+            "live_cover",
+            "liverooms",
+            "live_rooms",
+            "liveplayer",
+            "live_player"
     };
     private static final String[] AD_VIEW_SIGNATURES = {
             "feedad",
@@ -129,10 +137,64 @@ final class UiFilter {
             "promotion",
             "douyinmall",
             "douyin_mall",
+            "ecom",
+            "ecom_",
+            "ecom_live",
+            "ecom_cart",
+            "ecom_sku",
+            "ec_feed",
+            "ec_live",
+            "ec_card",
+            "shop_window",
+            "mall_card",
             "ecommerce",
             "commerce",
             "shopping",
             "shop"
+    };
+    private static final String[] AD_RESOURCE_SIGNATURES = {
+            "ad_selector",
+            "ad_generalize",
+            "ad_player_recommend_goods",
+            "ad_search_inline",
+            "feed_ad",
+            "ad_inline",
+            "ad_vip",
+            "ad_game",
+            "ad_av",
+            "ad_web",
+            "ad_badge",
+            "ad_tag",
+            "cm_mark",
+            "creative_ad",
+            "pegasus_ad",
+            "commercial",
+            "promotion",
+            "sponsor",
+            "ecom_",
+            "ecom_live",
+            "ecom_cart",
+            "ecom_sku",
+            "ec_feed",
+            "ec_live",
+            "ec_card",
+            "shop_window",
+            "mall_card"
+    };
+    private static final String[] LIVE_RESOURCE_SIGNATURES = {
+            "ic_live",
+            "live_badge",
+            "live_card",
+            "live_icon",
+            "live_preview",
+            "live_room",
+            "room_live",
+            "inline_live",
+            "right_top_live_badge",
+            "bg_live_card",
+            "live_cover",
+            "live_rooms",
+            "live_player"
     };
     private static final String[] MODEL_LIVE_SIGNATURES = {
             "is_live",
@@ -157,6 +219,18 @@ final class UiFilter {
             "live_stream",
             "livepreview",
             "live_preview",
+            "liveicon",
+            "live_icon",
+            "liveiconurl",
+            "live_icon_url",
+            "livecover",
+            "live_cover",
+            "liverooms",
+            "live_rooms",
+            "liveplayer",
+            "live_player",
+            "prelive",
+            "pre_live",
             "inlinelive",
             "inline_live",
             "righttoplivebadge",
@@ -201,6 +275,22 @@ final class UiFilter {
             "commerce",
             "ecommerce",
             "ecom",
+            "ecomlive",
+            "ecom_live",
+            "ecomliveparams",
+            "ecom_live_params",
+            "ecomdata",
+            "ecom_data",
+            "ecfeed",
+            "ec_feed",
+            "eclive",
+            "ec_live",
+            "eccard",
+            "ec_card",
+            "ecshop",
+            "ec_shop",
+            "ecmall",
+            "ec_mall",
             "douyinmall",
             "douyin_mall",
             "mallcard",
@@ -247,6 +337,30 @@ final class UiFilter {
             return;
         }
         scheduleCollapse(context, textView, match, rules, packageName, processName, currentActivity);
+    }
+
+    static void handleResourceBadgeSet(
+            Context context,
+            View view,
+            int resId,
+            String source,
+            String packageName,
+            String processName,
+            String currentActivity
+    ) {
+        if (view == null
+                || resId == 0
+                || !ActivityClassifier.isContentActivity(currentActivity)
+                || isNonFeedActivity(currentActivity)
+                || isInsideNonFeedSurface(context, view)) {
+            return;
+        }
+        RulesSnapshot rules = RulesCache.get(context);
+        Match match = matchResourceBadge(context, rules, packageName, resId);
+        if (!match.blocked) {
+            return;
+        }
+        scheduleResourceCollapse(context, view, match, rules, packageName, processName, currentActivity, source);
     }
 
     static void handleBoundItem(
@@ -792,6 +906,38 @@ final class UiFilter {
         return Match.none();
     }
 
+    private static Match matchResourceBadge(
+            Context context,
+            RulesSnapshot rules,
+            String packageName,
+            int resId
+    ) {
+        if (!rules.hasActiveRules(packageName)) {
+            return Match.none();
+        }
+        RulesSnapshot.AppRules appRules = rules.forPackage(packageName);
+        if (!appRules.enabled) {
+            return Match.none();
+        }
+        String name = resourceName(context, resId);
+        if (name.isEmpty()) {
+            return Match.none();
+        }
+        if (appRules.blockAds && isAdResourceName(name)) {
+            return Match.blocked("ad_resource", name);
+        }
+        if (appRules.blockLive && containsAny(name, LIVE_RESOURCE_SIGNATURES) != null) {
+            return Match.blocked("live_resource", name);
+        }
+        return Match.none();
+    }
+
+    private static boolean isAdResourceName(String name) {
+        return "ic_ad".equals(name)
+                || name.startsWith("ic_ad_")
+                || containsAny(name, AD_RESOURCE_SIGNATURES) != null;
+    }
+
     private static String resourceName(Context context, int id) {
         if (context == null || id == View.NO_ID) {
             return "";
@@ -881,6 +1027,73 @@ final class UiFilter {
                         + " reason=" + match
                         + " container=" + target.getClass().getName()
                         + " text=" + sanitize(textView.getText()));
+            }
+        });
+    }
+
+    private static void scheduleResourceCollapse(
+            Context context,
+            View leaf,
+            Match match,
+            RulesSnapshot rules,
+            String packageName,
+            String processName,
+            String currentActivity,
+            String source
+    ) {
+        if (leaf.getTag(TAG_COLLAPSED_REASON) instanceof String || leaf.getTag(TAG_PENDING_CHECK) != null) {
+            return;
+        }
+        leaf.setTag(TAG_PENDING_CHECK, Boolean.TRUE);
+        leaf.post(() -> {
+            leaf.setTag(TAG_PENDING_CHECK, null);
+            View target = findCollapsibleContainer(leaf);
+            if (target == null) {
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] resource matched but no feed container: " + match
+                            + " source=" + source
+                            + " view=" + leaf.getClass().getName());
+                }
+                return;
+            }
+            Object adapter = adapterFromNearestRecyclerView(leaf);
+            if (isNonFeedBinding(context, target, adapter, null, packageName, currentActivity)) {
+                restoreView(target);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip non-feed resource target: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName());
+                }
+                return;
+            }
+            if (isPagerPageItem(target, adapter, null)) {
+                concealPagerPage(target, match);
+                leaf.setTag(TAG_COLLAPSED_REASON, match.toString());
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] pager resource target concealed: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName());
+                }
+                return;
+            }
+            if (looksLikeWholeScreen(target)) {
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip oversized resource target: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName());
+                }
+                return;
+            }
+            collapseView(target, match);
+            leaf.setTag(TAG_COLLAPSED_REASON, match.toString());
+            if (rules.debugLog) {
+                XposedBridge.log("[LCF] resource collapsed package=" + packageName
+                        + " process=" + processName
+                        + " activity=" + currentActivity
+                        + " reason=" + match
+                        + " source=" + source
+                        + " container=" + target.getClass().getName()
+                        + " view=" + leaf.getClass().getName());
             }
         });
     }
