@@ -31,6 +31,7 @@ final class UiFilter {
     private static final int MAX_SCAN_TEXT_VIEWS = 80;
     private static final int MAX_MODEL_DEPTH = 3;
     private static final int MAX_MODEL_FIELDS = 96;
+    private static final int MAX_MODEL_METHODS = 24;
     private static final int MAX_MODEL_COLLECTION_ITEMS = 8;
     private static final Map<Object, Boolean> PAGER_RECYCLER_ADAPTERS = new WeakHashMap<>();
     private static final Map<Object, Boolean> NON_FEED_RECYCLER_ADAPTERS = new WeakHashMap<>();
@@ -415,6 +416,10 @@ final class UiFilter {
         if (shouldSkipModelClass(type)) {
             return Match.none();
         }
+        Match accessorMatch = scanModelAccessors(rules, packageName, value, type, budget);
+        if (accessorMatch.blocked) {
+            return accessorMatch;
+        }
         Class<?> current = type;
         while (current != null && current != Object.class && budget[0] <= MAX_MODEL_FIELDS) {
             Field[] fields;
@@ -450,6 +455,83 @@ final class UiFilter {
             current = current.getSuperclass();
         }
         return Match.none();
+    }
+
+    private static Match scanModelAccessors(
+            RulesSnapshot rules,
+            String packageName,
+            Object value,
+            Class<?> type,
+            int[] budget
+    ) {
+        int methodCount = 0;
+        Class<?> current = type;
+        while (current != null && current != Object.class && budget[0] <= MAX_MODEL_FIELDS) {
+            Method[] methods;
+            try {
+                methods = current.getDeclaredMethods();
+            } catch (Throwable ignored) {
+                break;
+            }
+            for (Method method : methods) {
+                if (!isSignalAccessor(rules, packageName, method)) {
+                    continue;
+                }
+                if (methodCount++ >= MAX_MODEL_METHODS || budget[0]++ > MAX_MODEL_FIELDS) {
+                    return Match.none();
+                }
+                Object child;
+                try {
+                    method.setAccessible(true);
+                    child = method.invoke(value);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                Match signal = matchModelSignal(rules, packageName, method.getName(), child);
+                if (signal.blocked) {
+                    return signal;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return Match.none();
+    }
+
+    private static boolean isSignalAccessor(RulesSnapshot rules, String packageName, Method method) {
+        int modifiers = method.getModifiers();
+        if (Modifier.isStatic(modifiers)
+                || method.isSynthetic()
+                || method.isBridge()
+                || method.getParameterTypes().length != 0
+                || method.getReturnType() == Void.TYPE) {
+            return false;
+        }
+        String name = method.getName();
+        if (!isAccessorName(name)) {
+            return false;
+        }
+        return hasModelSignalName(rules, packageName, normalizeIdentityToken(name));
+    }
+
+    private static boolean isAccessorName(String name) {
+        if (name == null) {
+            return false;
+        }
+        return (name.startsWith("get") && name.length() > 3)
+                || (name.startsWith("is") && name.length() > 2)
+                || (name.startsWith("has") && name.length() > 3);
+    }
+
+    private static boolean hasModelSignalName(RulesSnapshot rules, String packageName, String normalizedName) {
+        if (normalizedName == null || normalizedName.isEmpty() || !rules.hasActiveRules(packageName)) {
+            return false;
+        }
+        RulesSnapshot.AppRules appRules = rules.forPackage(packageName);
+        if (!appRules.enabled) {
+            return false;
+        }
+        return (appRules.blockAds && containsAny(normalizedName, MODEL_AD_SIGNATURES) != null)
+                || (appRules.blockLive && containsAny(normalizedName, MODEL_LIVE_SIGNATURES) != null);
     }
 
     private static Match scanModelArray(
