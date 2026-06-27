@@ -114,6 +114,12 @@ final class UiFilter {
             "联系人",
             "通讯录",
             "互关",
+            "好友",
+            "朋友",
+            "好友列表",
+            "朋友列表",
+            "我的好友",
+            "我的朋友",
             "小伙伴",
             "陌生人消息",
             "未关注人消息",
@@ -309,9 +315,8 @@ final class UiFilter {
             "pegasus",
             "theseus",
             "storyfeed",
-            "player",
-            "video",
-            "detail"
+            "feedplayer",
+            "playfeed"
     };
     private static final String[] LIVE_VIEW_SIGNATURES = {
             "live",
@@ -2230,10 +2235,7 @@ final class UiFilter {
             return true;
         }
         String activity = normalizeIdentityToken(currentActivity);
-        return activity.contains("feed")
-                || activity.contains("video")
-                || activity.contains("detail")
-                || activity.contains("pegasus");
+        return activity.contains("feed") || activity.contains("pegasus");
     }
 
     private static boolean isInsideFeedSurface(Context context, View view) {
