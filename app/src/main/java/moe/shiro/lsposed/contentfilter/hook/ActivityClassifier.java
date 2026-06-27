@@ -13,7 +13,16 @@ final class ActivityClassifier {
                 || lower.contains("preference")
                 || lower.contains("permission")
                 || lower.contains("account")
-                || lower.contains("feedback")) {
+                || lower.contains("feedback")
+                || lower.contains("message")
+                || lower.contains("notice")
+                || lower.contains("notification")
+                || lower.contains("conversation")
+                || lower.contains("privateletter")
+                || lower.contains("chat")
+                || lower.contains("contact")
+                || lower.contains("friend")
+                || lower.contains("relation")) {
             return false;
         }
         return lower.contains("mainactivity")
