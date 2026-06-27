@@ -978,6 +978,7 @@ final class UiFilter {
     ) {
         if (textView instanceof EditText
                 || text == null
+                || isDouyinPackage(packageName)
                 || !ActivityClassifier.isContentActivity(currentActivity)
                 || isNonFeedActivity(currentActivity)
                 || isInsideNonFeedSurface(context, textView)) {
@@ -1002,6 +1003,7 @@ final class UiFilter {
     ) {
         if (view == null
                 || resId == 0
+                || isDouyinPackage(packageName)
                 || !ActivityClassifier.isContentActivity(currentActivity)
                 || isNonFeedActivity(currentActivity)
                 || isInsideNonFeedSurface(context, view)) {
@@ -1027,6 +1029,7 @@ final class UiFilter {
         if (view == null
                 || view instanceof EditText
                 || text == null
+                || isDouyinPackage(packageName)
                 || !ActivityClassifier.isContentActivity(currentActivity)
                 || isNonFeedActivity(currentActivity)
                 || isInsideNonFeedSurface(context, view)) {
@@ -1053,6 +1056,7 @@ final class UiFilter {
         if (view == null
                 || value == null
                 || isInternalTagKey(key)
+                || isDouyinPackage(packageName)
                 || !ActivityClassifier.isContentActivity(currentActivity)
                 || isNonFeedActivity(currentActivity)
                 || isInsideNonFeedSurface(context, view)
@@ -1102,6 +1106,7 @@ final class UiFilter {
     ) {
         if (view == null
                 || drawable == null
+                || isDouyinPackage(packageName)
                 || !ActivityClassifier.isContentActivity(currentActivity)
                 || isNonFeedActivity(currentActivity)
                 || isInsideNonFeedSurface(context, view)
@@ -1157,13 +1162,27 @@ final class UiFilter {
             restoreView(itemView);
             return;
         }
+        if (isDouyinPackage(packageName)
+                && !isFeedLikeBinding(context, itemView, adapter, holder, packageName, currentActivity)) {
+            restoreView(itemView);
+            if (rules.debugLog) {
+                XposedBridge.log("[LCF] skip Douyin non-feed binding before scan"
+                        + " package=" + packageName
+                        + " process=" + processName
+                        + " activity=" + currentActivity
+                        + " adapter=" + className(adapter)
+                        + " holder=" + className(holder)
+                        + " container=" + itemView.getClass().getName());
+            }
+            return;
+        }
         Match match = scanViewTree(context, rules, packageName, itemView, 0, new int[]{0});
         if (!match.blocked) {
             match = scanBoundModel(rules, packageName, itemView, holder);
         }
         if (match.blocked) {
             if (requiresFeedLikeTarget(match)
-                    && !isFeedLikeBinding(context, itemView, adapter, holder, currentActivity)) {
+                    && !isFeedLikeBinding(context, itemView, adapter, holder, packageName, currentActivity)) {
                 restoreView(itemView);
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] skip user match outside feed-like binding: " + match
@@ -1893,7 +1912,7 @@ final class UiFilter {
                 return;
             }
             if (requiresFeedLikeTarget(match)
-                    && !isFeedLikeBinding(context, target, adapter, null, currentActivity)) {
+                    && !isFeedLikeBinding(context, target, adapter, null, packageName, currentActivity)) {
                 restoreView(target);
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] skip user text target outside feed-like binding: " + match
@@ -1969,7 +1988,7 @@ final class UiFilter {
                 return;
             }
             if (requiresFeedLikeTarget(match)
-                    && !isFeedLikeBinding(context, target, adapter, null, currentActivity)) {
+                    && !isFeedLikeBinding(context, target, adapter, null, packageName, currentActivity)) {
                 restoreView(target);
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] skip user resource target outside feed-like binding: " + match
@@ -2048,7 +2067,7 @@ final class UiFilter {
                 return;
             }
             if (requiresFeedLikeTarget(match)
-                    && !isFeedLikeBinding(context, target, adapter, null, currentActivity)) {
+                    && !isFeedLikeBinding(context, target, adapter, null, packageName, currentActivity)) {
                 restoreView(target);
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] skip user signal target outside feed-like binding: " + match
@@ -2192,6 +2211,10 @@ final class UiFilter {
         return "tv.danmaku.bili".equals(packageName) || "com.bilibili.app.in".equals(packageName);
     }
 
+    private static boolean isDouyinPackage(String packageName) {
+        return "com.ss.android.ugc.aweme".equals(packageName);
+    }
+
     private static boolean isNonFeedActivity(String currentActivity) {
         return containsAny(normalizeIdentityToken(currentActivity), NON_FEED_BINDING_SIGNATURES) != null;
     }
@@ -2274,10 +2297,16 @@ final class UiFilter {
             View itemView,
             Object adapter,
             Object holder,
+            String packageName,
             String currentActivity
     ) {
         if (itemView == null) {
             return false;
+        }
+        if (isDouyinPackage(packageName)) {
+            return containsFeedIdentity(adapter)
+                    || containsFeedIdentity(holder)
+                    || containsFeedIdentity(itemView.getTag());
         }
         if (isInsideFeedSurface(context, itemView)
                 || containsFeedIdentity(adapter)
@@ -2464,7 +2493,7 @@ final class UiFilter {
     ) {
         if (!rules.debugLog
                 || itemView == null
-                || !isFeedLikeBinding(context, itemView, adapter, holder, currentActivity)) {
+                || !isFeedLikeBinding(context, itemView, adapter, holder, packageName, currentActivity)) {
             return;
         }
         String key = packageName
