@@ -39,6 +39,25 @@ final class UiFilter {
     private static final String[] NON_FEED_SURFACE_SIGNATURES = {
             "drawer",
             "navigationview",
+            "bottomnavigation",
+            "bottom_navigation",
+            "navigationbar",
+            "navigation_bar",
+            "tablayout",
+            "tab_layout",
+            "tabbar",
+            "tab_bar",
+            "bottombar",
+            "bottom_bar",
+            "maintab",
+            "main_tab",
+            "hometab",
+            "home_tab",
+            "toolbar",
+            "topbar",
+            "titlebar",
+            "actionbar",
+            "searchbar",
             "popup",
             "dialog",
             "menu",
@@ -58,9 +77,20 @@ final class UiFilter {
             "session",
             "privateletter",
             "private_letter",
+            "directmessage",
+            "direct_message",
+            "imsession",
+            "im_session",
+            "imcontact",
+            "im_contact",
+            "immessage",
+            "im_message",
             "chat",
             "contact",
             "friend",
+            "friends",
+            "familiar",
+            "familiar_feed",
             "评论",
             "回复",
             "弹幕",
@@ -70,7 +100,10 @@ final class UiFilter {
             "私信",
             "聊天",
             "联系人",
-            "好友"
+            "好友",
+            "朋友",
+            "通讯录",
+            "互关"
     };
     private static final String[] NON_FEED_BINDING_SIGNATURES = {
             "comment2",
@@ -103,11 +136,37 @@ final class UiFilter {
             "biliresourcecomment",
             "appcommcomment",
             "appcomment",
+            "biliresourceim",
+            "resourceim",
+            "srcsappim",
             "bplusim",
+            "awemeim",
+            "awemeimsdk",
+            "imsdk",
+            "imsession",
+            "imsessionlist",
+            "imsessionitem",
+            "imsessionadapter",
+            "imconversation",
+            "imconversationlist",
+            "imconversationitem",
+            "imcontact",
+            "imcontactlist",
+            "imcontactitem",
+            "immessage",
+            "immessagelist",
+            "immessageitem",
+            "imchat",
             "privateletter",
+            "privateletterlist",
+            "privatemessage",
+            "directmessage",
             "noticesactivity",
             "noticeactivity",
             "notificationactivity",
+            "notificationlist",
+            "notificationitem",
+            "noticeadapter",
             "conversationactivity",
             "conversationlist",
             "conversationitem",
@@ -146,6 +205,14 @@ final class UiFilter {
             "relationselect",
             "relationlist",
             "relationitem",
+            "familiar",
+            "familiarfeed",
+            "familiarpage",
+            "homepagefamiliar",
+            "friendfeed",
+            "friendsfeed",
+            "friendpage",
+            "friendstab",
             "friendgroup",
             "friendlist",
             "frienditem",
@@ -158,7 +225,10 @@ final class UiFilter {
             "私信",
             "聊天",
             "联系人",
-            "好友"
+            "好友",
+            "朋友",
+            "通讯录",
+            "互关"
     };
     private static final String[] NON_FEED_MODEL_FIELD_SIGNATURES = {
             "commentlist",
@@ -174,6 +244,18 @@ final class UiFilter {
             "danmulist",
             "conversationlist",
             "conversationitem",
+            "imconversation",
+            "imconversationlist",
+            "imconversationitem",
+            "imsession",
+            "imsessionlist",
+            "imsessionitem",
+            "immessage",
+            "immessagelist",
+            "immessageitem",
+            "imcontact",
+            "imcontactlist",
+            "imcontactitem",
             "chatlist",
             "chatitem",
             "chatmessage",
@@ -185,6 +267,10 @@ final class UiFilter {
             "contactitem",
             "relationlist",
             "relationitem",
+            "familiar",
+            "familiarfeed",
+            "friendfeed",
+            "friendsfeed",
             "friendlist",
             "frienditem",
             "privateletter"
@@ -792,7 +878,7 @@ final class UiFilter {
         if (adapter == null || recyclerView == null) {
             return;
         }
-        markNonFeedRecyclerAdapter(adapter);
+        markNonFeedRecyclerAdapter(adapter, recyclerView);
         if (!markPagerRecyclerAdapter(adapter, recyclerView)) {
             recyclerView.post(() -> markPagerRecyclerAdapter(adapter, recyclerView));
         }
@@ -2033,8 +2119,12 @@ final class UiFilter {
         return false;
     }
 
-    private static void markNonFeedRecyclerAdapter(Object adapter) {
-        if (adapter == null || !containsNonFeedIdentity(adapter)) {
+    private static void markNonFeedRecyclerAdapter(Object adapter, View recyclerView) {
+        if (adapter == null) {
+            return;
+        }
+        Context context = recyclerView == null ? null : recyclerView.getContext();
+        if (!containsNonFeedIdentity(adapter) && !isInsideNonFeedSurface(context, recyclerView)) {
             return;
         }
         synchronized (NON_FEED_RECYCLER_ADAPTERS) {
