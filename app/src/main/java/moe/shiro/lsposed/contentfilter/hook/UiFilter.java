@@ -105,6 +105,22 @@ final class UiFilter {
             "通讯录",
             "互关"
     };
+    private static final String[] NON_FEED_VISIBLE_TEXT_SIGNATURES = {
+            "好友私信",
+            "私信",
+            "消息",
+            "聊天",
+            "会话",
+            "联系人",
+            "通讯录",
+            "互关",
+            "小伙伴",
+            "陌生人消息",
+            "未关注人消息",
+            "群消息",
+            "客服消息",
+            "应援团消息"
+    };
     private static final String[] NON_FEED_BINDING_SIGNATURES = {
             "comment2",
             "comment3",
@@ -274,6 +290,28 @@ final class UiFilter {
             "friendlist",
             "frienditem",
             "privateletter"
+    };
+    private static final String[] FEED_BINDING_SIGNATURES = {
+            "feed",
+            "feeditem",
+            "feedcard",
+            "videofeed",
+            "videocard",
+            "shortvideo",
+            "homepagefeed",
+            "homepagehot",
+            "homefeed",
+            "recommendfeed",
+            "recommend",
+            "recommendation",
+            "rcmd",
+            "recfeed",
+            "pegasus",
+            "theseus",
+            "storyfeed",
+            "player",
+            "video",
+            "detail"
     };
     private static final String[] LIVE_VIEW_SIGNATURES = {
             "live",
@@ -1078,6 +1116,18 @@ final class UiFilter {
             match = scanBoundModel(rules, packageName, itemView, holder);
         }
         if (match.blocked) {
+            if (requiresFeedLikeTarget(match)
+                    && !isFeedLikeBinding(context, itemView, adapter, holder, currentActivity)) {
+                restoreView(itemView);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip user match outside feed-like binding: " + match
+                            + " package=" + packageName
+                            + " process=" + processName
+                            + " activity=" + currentActivity
+                            + " container=" + itemView.getClass().getName());
+                }
+                return;
+            }
             if (pagerPageItem) {
                 concealPagerPage(itemView, match);
                 if (rules.debugLog) {
@@ -1783,6 +1833,16 @@ final class UiFilter {
                 }
                 return;
             }
+            if (requiresFeedLikeTarget(match)
+                    && !isFeedLikeBinding(context, target, adapter, null, currentActivity)) {
+                restoreView(target);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip user text target outside feed-like binding: " + match
+                            + " container=" + target.getClass().getName()
+                            + " text=" + sanitize(textView.getText()));
+                }
+                return;
+            }
             if (isPagerPageItem(target, null, null)) {
                 concealPagerPage(target, match);
                 textView.setTag(TAG_COLLAPSED_REASON, match.toString());
@@ -1844,6 +1904,16 @@ final class UiFilter {
                 restoreView(target);
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] skip non-feed resource target: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName());
+                }
+                return;
+            }
+            if (requiresFeedLikeTarget(match)
+                    && !isFeedLikeBinding(context, target, adapter, null, currentActivity)) {
+                restoreView(target);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip user resource target outside feed-like binding: " + match
                             + " source=" + source
                             + " container=" + target.getClass().getName());
                 }
@@ -1912,6 +1982,17 @@ final class UiFilter {
                 restoreView(target);
                 if (rules.debugLog) {
                     XposedBridge.log("[LCF] skip non-feed signal target: " + match
+                            + " source=" + source
+                            + " container=" + target.getClass().getName()
+                            + " value=" + sanitize(rawValue));
+                }
+                return;
+            }
+            if (requiresFeedLikeTarget(match)
+                    && !isFeedLikeBinding(context, target, adapter, null, currentActivity)) {
+                restoreView(target);
+                if (rules.debugLog) {
+                    XposedBridge.log("[LCF] skip user signal target outside feed-like binding: " + match
                             + " source=" + source
                             + " container=" + target.getClass().getName()
                             + " value=" + sanitize(rawValue));
@@ -2019,8 +2100,14 @@ final class UiFilter {
     }
 
     private static boolean isNonFeedSurfaceView(Context context, View view) {
-        return view != null
-                && containsAny(nonFeedIdentity(context, view), NON_FEED_SURFACE_SIGNATURES) != null;
+        if (view == null) {
+            return false;
+        }
+        if (containsAny(nonFeedIdentity(context, view), NON_FEED_SURFACE_SIGNATURES) != null) {
+            return true;
+        }
+        return view instanceof TextView
+                && containsShortVisibleText((TextView) view, NON_FEED_VISIBLE_TEXT_SIGNATURES);
     }
 
     private static String nonFeedIdentity(Context context, View view) {
@@ -2117,6 +2204,71 @@ final class UiFilter {
             current = current.getSuperclass();
         }
         return false;
+    }
+
+    private static boolean requiresFeedLikeTarget(Match match) {
+        return match != null
+                && ("user".equals(match.type) || "user_model".equals(match.type));
+    }
+
+    private static boolean isFeedLikeBinding(
+            Context context,
+            View itemView,
+            Object adapter,
+            Object holder,
+            String currentActivity
+    ) {
+        if (itemView == null) {
+            return false;
+        }
+        if (isInsideFeedSurface(context, itemView)
+                || containsFeedIdentity(adapter)
+                || containsFeedIdentity(holder)
+                || containsFeedIdentity(itemView.getTag())) {
+            return true;
+        }
+        String activity = normalizeIdentityToken(currentActivity);
+        return activity.contains("feed")
+                || activity.contains("video")
+                || activity.contains("detail")
+                || activity.contains("pegasus");
+    }
+
+    private static boolean isInsideFeedSurface(Context context, View view) {
+        View current = view;
+        for (int depth = 0; depth < MAX_PARENT_DEPTH && current != null; depth++) {
+            if (containsAny(nonFeedIdentity(context, current), FEED_BINDING_SIGNATURES) != null) {
+                return true;
+            }
+            ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return false;
+    }
+
+    private static boolean containsFeedIdentity(Object value) {
+        if (value == null) {
+            return false;
+        }
+        Class<?> type = value instanceof Class ? (Class<?>) value : value.getClass();
+        for (int depth = 0; depth < 5 && type != null && type != Object.class; depth++) {
+            if (containsAny(normalizeIdentityToken(type.getName()), FEED_BINDING_SIGNATURES) != null) {
+                return true;
+            }
+            type = type.getSuperclass();
+        }
+        return false;
+    }
+
+    private static boolean containsShortVisibleText(TextView view, String[] signatures) {
+        CharSequence raw = view.getText();
+        if (raw == null) {
+            return false;
+        }
+        String text = RulesSnapshot.normalize(raw);
+        return !text.isEmpty()
+                && text.length() <= 16
+                && containsAny(text, signatures) != null;
     }
 
     private static void markNonFeedRecyclerAdapter(Object adapter, View recyclerView) {
