@@ -1150,6 +1150,7 @@ final class UiFilter {
         if (itemView == null
                 || !ActivityClassifier.isContentActivity(currentActivity)
                 || isNonFeedActivity(currentActivity)) {
+            restoreView(itemView);
             return;
         }
         if (isNonFeedBinding(context, itemView, adapter, holder, packageName, currentActivity)) {

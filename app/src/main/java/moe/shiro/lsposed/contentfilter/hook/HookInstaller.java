@@ -33,15 +33,21 @@ final class HookInstaller {
         }
         RulesCache.warmUp(appContext);
         hookActivityResume();
-        hookTextUpdates(appContext);
-        hookContentDescriptions(appContext);
-        hookViewTags(appContext);
-        hookResourceBadges(appContext);
-        hookDrawableObjects(appContext);
-        hookTextCompoundResources(appContext);
+        if (!isDouyinPackage(targetPackageName)) {
+            hookTextUpdates(appContext);
+            hookContentDescriptions(appContext);
+            hookViewTags(appContext);
+            hookResourceBadges(appContext);
+            hookDrawableObjects(appContext);
+            hookTextCompoundResources(appContext);
+        }
         RecyclerBindHook.install(classLoader, appContext, CURRENT);
         SettingsEntryInjector.install(classLoader, appContext, CURRENT);
         XposedBridge.log("[LCF] hooks installed for " + CURRENT.packageName + " process=" + CURRENT.processName);
+    }
+
+    private static boolean isDouyinPackage(String packageName) {
+        return "com.ss.android.ugc.aweme".equals(packageName);
     }
 
     private static void hookActivityResume() {
