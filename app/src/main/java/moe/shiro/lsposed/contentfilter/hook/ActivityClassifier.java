@@ -22,7 +22,27 @@ final class ActivityClassifier {
                 || lower.contains("chat")
                 || lower.contains("contact")
                 || lower.contains("friend")
-                || lower.contains("relation")) {
+                || lower.contains("relation")
+                || lower.contains("shopping")
+                || lower.contains("commerce")
+                || lower.contains("ecommerce")
+                || lower.contains("douyinmall")
+                || lower.contains("ecmall")
+                || lower.contains("shoppingcart")
+                || lower.contains("shopdetail")
+                || lower.contains("productdetail")
+                || lower.contains("orderdetail")
+                || lower.contains("sku_panel")
+                || lower.contains("couponpanel")) {
+            return false;
+        }
+        if ((lower.contains("liveroom")
+                || lower.contains("live_room")
+                || lower.contains("liveplay")
+                || lower.contains("live_play")
+                || lower.contains("broadcast")
+                || lower.contains("chatroom"))
+                && !lower.contains("feed")) {
             return false;
         }
         return lower.contains("mainactivity")
