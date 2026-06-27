@@ -25,7 +25,13 @@ final class RecyclerBindHook {
             CurrentTarget currentTarget
     ) {
         installForClassLoader(classLoader, appContext, currentTarget, true);
-        installDeferredClassLoadHook(appContext, currentTarget);
+        if (needsDeferredRecyclerHook(currentTarget.packageName)) {
+            installDeferredClassLoadHook(appContext, currentTarget);
+        }
+    }
+
+    private static boolean needsDeferredRecyclerHook(String packageName) {
+        return "com.bilibili.app.in".equals(packageName);
     }
 
     private static void installForClassLoader(

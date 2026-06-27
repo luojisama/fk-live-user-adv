@@ -1320,6 +1320,9 @@ final class UiFilter {
             IdentityHashMap<Object, Boolean> visited,
             int[] budget
     ) {
+        if ("com.ss.android.ugc.aweme".equals(packageName)) {
+            return Match.none();
+        }
         int methodCount = 0;
         Class<?> current = type;
         while (current != null && current != Object.class && budget[0] <= MAX_MODEL_FIELDS) {
@@ -2207,8 +2210,7 @@ final class UiFilter {
     }
 
     private static boolean requiresFeedLikeTarget(Match match) {
-        return match != null
-                && ("user".equals(match.type) || "user_model".equals(match.type));
+        return match != null && match.blocked;
     }
 
     private static boolean isFeedLikeBinding(
