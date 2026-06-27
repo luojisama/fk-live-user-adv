@@ -15,6 +15,7 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,8 +35,14 @@ final class UiFilter {
     private static final int MAX_MODEL_FIELDS = 96;
     private static final int MAX_MODEL_METHODS = 24;
     private static final int MAX_MODEL_COLLECTION_ITEMS = 8;
+    private static final int MAX_DEBUG_FEED_SAMPLES_PER_KEY = 3;
+    private static final int MAX_DEBUG_FEED_SAMPLE_KEYS = 64;
+    private static final int MAX_DEBUG_SAMPLE_DEPTH = 5;
+    private static final int MAX_DEBUG_SAMPLE_VIEWS = 48;
+    private static final int MAX_DEBUG_SAMPLE_TEXT_CHARS = 48;
     private static final Map<Object, Boolean> PAGER_RECYCLER_ADAPTERS = new WeakHashMap<>();
     private static final Map<Object, Boolean> NON_FEED_RECYCLER_ADAPTERS = new WeakHashMap<>();
+    private static final Map<String, Integer> DEBUG_FEED_SAMPLE_COUNTS = new HashMap<>();
     private static final String[] NON_FEED_SURFACE_SIGNATURES = {
             "drawer",
             "navigationview",
@@ -1188,6 +1195,16 @@ final class UiFilter {
             }
         } else {
             restoreView(itemView);
+            maybeLogUnmatchedFeedItem(
+                    context,
+                    rules,
+                    packageName,
+                    processName,
+                    currentActivity,
+                    itemView,
+                    adapter,
+                    holder
+            );
         }
     }
 
@@ -2433,6 +2450,143 @@ final class UiFilter {
         }
         return view.getWidth() >= root.getWidth() * 0.85f
                 && view.getHeight() >= root.getHeight() * 0.75f;
+    }
+
+    private static void maybeLogUnmatchedFeedItem(
+            Context context,
+            RulesSnapshot rules,
+            String packageName,
+            String processName,
+            String currentActivity,
+            View itemView,
+            Object adapter,
+            Object holder
+    ) {
+        if (!rules.debugLog
+                || itemView == null
+                || !isFeedLikeBinding(context, itemView, adapter, holder, currentActivity)) {
+            return;
+        }
+        String key = packageName
+                + "|" + normalizeIdentityToken(currentActivity)
+                + "|" + className(adapter)
+                + "|" + className(holder);
+        if (!takeDebugFeedSample(key)) {
+            return;
+        }
+        StringBuilder ids = new StringBuilder();
+        StringBuilder texts = new StringBuilder();
+        StringBuilder tags = new StringBuilder();
+        collectDebugViewSignals(context, itemView, 0, new int[]{0}, ids, texts, tags);
+        XposedBridge.log("[LCF] unmatched feed sample package=" + packageName
+                + " process=" + processName
+                + " activity=" + currentActivity
+                + " adapter=" + className(adapter)
+                + " holder=" + className(holder)
+                + " container=" + itemView.getClass().getName()
+                + " ids=" + ids
+                + " texts=" + texts
+                + " tags=" + tags);
+    }
+
+    private static boolean takeDebugFeedSample(String key) {
+        synchronized (DEBUG_FEED_SAMPLE_COUNTS) {
+            Integer count = DEBUG_FEED_SAMPLE_COUNTS.get(key);
+            if (count == null) {
+                if (DEBUG_FEED_SAMPLE_COUNTS.size() >= MAX_DEBUG_FEED_SAMPLE_KEYS) {
+                    return false;
+                }
+                DEBUG_FEED_SAMPLE_COUNTS.put(key, 1);
+                return true;
+            }
+            if (count >= MAX_DEBUG_FEED_SAMPLES_PER_KEY) {
+                return false;
+            }
+            DEBUG_FEED_SAMPLE_COUNTS.put(key, count + 1);
+            return true;
+        }
+    }
+
+    private static void collectDebugViewSignals(
+            Context context,
+            View view,
+            int depth,
+            int[] views,
+            StringBuilder ids,
+            StringBuilder texts,
+            StringBuilder tags
+    ) {
+        if (view == null
+                || depth > MAX_DEBUG_SAMPLE_DEPTH
+                || views[0]++ > MAX_DEBUG_SAMPLE_VIEWS
+                || isNonFeedSurfaceView(context, view)) {
+            return;
+        }
+        String id = resourceName(context, view.getId());
+        if (!id.isEmpty()) {
+            appendDebugValue(ids, id, 16);
+        }
+        if (view instanceof TextView && !(view instanceof EditText)) {
+            appendDebugText(texts, ((TextView) view).getText());
+        }
+        appendDebugText(texts, view.getContentDescription());
+        Object tag = view.getTag();
+        if (tag instanceof CharSequence) {
+            appendDebugText(texts, (CharSequence) tag);
+        } else if (tag != null) {
+            appendDebugValue(tags, className(tag), 10);
+        }
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            collectDebugViewSignals(context, group.getChildAt(i), depth + 1, views, ids, texts, tags);
+        }
+    }
+
+    private static void appendDebugText(StringBuilder builder, CharSequence value) {
+        String text = trimDebugText(value);
+        if (!text.isEmpty()) {
+            appendDebugValue(builder, text, 8);
+        }
+    }
+
+    private static void appendDebugValue(StringBuilder builder, String value, int maxValues) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        int count = 0;
+        for (int i = 0; i < builder.length(); i++) {
+            if (builder.charAt(i) == '|') {
+                count++;
+            }
+        }
+        if (builder.length() > 0) {
+            count++;
+        }
+        if (count >= maxValues || builder.indexOf(value) >= 0) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append('|');
+        }
+        builder.append(value);
+    }
+
+    private static String trimDebugText(CharSequence value) {
+        if (value == null) {
+            return "";
+        }
+        String text = sanitize(value);
+        if (text.length() > MAX_DEBUG_SAMPLE_TEXT_CHARS) {
+            return text.substring(0, MAX_DEBUG_SAMPLE_TEXT_CHARS) + "...";
+        }
+        return text;
+    }
+
+    private static String className(Object value) {
+        return value == null ? "" : value.getClass().getName();
     }
 
     private static void collapseView(View view, Match match) {
